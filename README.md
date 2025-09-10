@@ -1,5 +1,20 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+
+## Paso 1
+npm install
+## Paso 2
+New-Item .env.local -ItemType File
+## Paso 3: Copiar en .env.local
+NEXT_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=TU_KEY_ANONIMA
+SUPABASE_SERVICE_ROLE_KEY=TU_KEY_ADMIN
+
+
+# Clerk
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=TU_CLERK_PUBLIC_KEY
+CLERK_SECRET_KEY=TU_CLERK_SECRET_KEY
+
 ## Getting Started
 
 First, run the development server:
