@@ -1,0 +1,173 @@
+-- ==============================
+-- CONFIA TRADE - BASE DE DATOS
+-- Versión final lista para ejecutar
+-- ==============================
+
+-- ELIMINAR TABLAS EXISTENTES
+DROP TABLE IF EXISTS pedidos_productos CASCADE;
+DROP TABLE IF EXISTS envios CASCADE;
+DROP TABLE IF EXISTS transportes CASCADE;
+DROP TABLE IF EXISTS pedidos CASCADE;
+DROP TABLE IF EXISTS productos CASCADE;
+DROP TABLE IF EXISTS perfiles CASCADE;
+
+-- 1) TABLA DE PERFILES
+CREATE TABLE perfiles (
+  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email          TEXT NOT NULL UNIQUE,
+  nombre         TEXT,
+  rol            TEXT NOT NULL DEFAULT 'cliente' CHECK (rol IN ('cliente','admin')),
+  fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 2) TABLA DE PRODUCTOS
+CREATE TABLE productos (
+  id             SERIAL PRIMARY KEY,
+  nombre         TEXT NOT NULL,
+  descripcion    TEXT,
+  precio         NUMERIC NOT NULL CHECK (precio >= 0),
+  stock          INT NOT NULL DEFAULT 0 CHECK (stock >= 0),
+  imagen         TEXT,
+  fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 3) TABLA DE PEDIDOS
+CREATE TABLE pedidos (
+  id             SERIAL PRIMARY KEY,
+  usuario_id     UUID REFERENCES perfiles(id) ON DELETE CASCADE,
+  estado TEXT NOT NULL DEFAULT 'pendiente'
+CHECK (estado IN ('pendiente','confirmado','rechazado','enviado','entregado')),
+
+  monto_total    NUMERIC CHECK (monto_total >= 0),
+  fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 4) TABLA DE ENVÍOS (opcional)
+CREATE TABLE envios (
+  id                SERIAL PRIMARY KEY,
+  pedido_id         INT REFERENCES pedidos(id) ON DELETE CASCADE,
+  fecha_envio       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  direccion_destino TEXT,
+  estado_envio      TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado_envio IN ('pendiente','en tránsito','entregado'))
+);
+
+-- 5) TABLA DE TRANSPORTES (opcional)
+CREATE TABLE transportes (
+  id              SERIAL PRIMARY KEY,
+  tipo_transporte TEXT,
+  numero_licencia TEXT,
+  estado          TEXT NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo'))
+);
+
+-- 6) TABLA DE RELACIÓN PEDIDOS-PRODUCTOS
+CREATE TABLE pedidos_productos (
+  id             SERIAL PRIMARY KEY,
+  producto_id    INT REFERENCES productos(id) ON DELETE CASCADE,
+  usuario_id     UUID REFERENCES perfiles(id) ON DELETE CASCADE,
+  cantidad       INT NOT NULL DEFAULT 1 CHECK (cantidad >= 1),
+  monto          NUMERIC CHECK (monto >= 0),
+  estado         TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'confirmada', 'rechazada')),
+  fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ==============================
+-- 7) INDICES
+-- ==============================
+CREATE INDEX idx_productos_nombre ON productos(nombre);
+CREATE INDEX idx_pedidos_usuario_id ON pedidos(usuario_id);
+CREATE INDEX idx_envios_pedido_id ON envios(pedido_id);
+CREATE INDEX idx_transportes_estado ON transportes(estado);
+CREATE INDEX idx_pedidos_productos_usuario_id ON pedidos_productos(usuario_id);
+CREATE INDEX idx_pedidos_productos_producto_id ON pedidos_productos(producto_id);
+CREATE INDEX idx_pedidos_productos_estado ON pedidos_productos(estado);
+
+-- ==============================
+-- 8) ROW-LEVEL SECURITY (RLS) y POLÍTICAS
+-- ==============================
+ALTER TABLE perfiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE productos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pedidos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE envios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transportes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pedidos_productos ENABLE ROW LEVEL SECURITY;
+
+-- PERFILES
+CREATE POLICY "perfiles_select_all" ON perfiles FOR SELECT USING (true);
+CREATE POLICY "perfiles_insert" ON perfiles FOR INSERT WITH CHECK (true);
+
+-- PRODUCTOS
+CREATE POLICY "productos_select_all" ON productos FOR SELECT USING (true);
+CREATE POLICY "productos_insert" ON productos FOR INSERT WITH CHECK (current_setting('role') = 'admin');
+CREATE POLICY "productos_update" ON productos FOR UPDATE USING (current_setting('role') = 'admin');
+CREATE POLICY "productos_delete" ON productos FOR DELETE USING (current_setting('role') = 'admin');
+
+-- PEDIDOS
+CREATE POLICY "pedidos_select_cliente" ON pedidos FOR SELECT USING (usuario_id = auth.uid());
+CREATE POLICY "pedidos_select_admin" ON pedidos FOR SELECT USING (current_setting('role') = 'admin');
+CREATE POLICY "pedidos_insert" ON pedidos FOR INSERT WITH CHECK (true);
+CREATE POLICY "pedidos_update_admin" ON pedidos FOR UPDATE USING (current_setting('role') = 'admin');
+
+-- ENVÍOS
+CREATE POLICY "envios_select_cliente" ON envios FOR SELECT USING (EXISTS (SELECT 1 FROM pedidos WHERE pedidos.id = envios.pedido_id AND pedidos.usuario_id = auth.uid()));
+CREATE POLICY "envios_select_admin" ON envios FOR SELECT USING (current_setting('role') = 'admin');
+
+-- TRANSPORTES
+CREATE POLICY "transportes_select_all" ON transportes FOR SELECT USING (true);
+CREATE POLICY "transportes_insert" ON transportes FOR INSERT WITH CHECK (current_setting('role') = 'admin');
+
+-- PEDIDOS_PRODUCTOS
+CREATE POLICY "pedidos_productos_select_cliente" ON pedidos_productos FOR SELECT USING (usuario_id = auth.uid());
+CREATE POLICY "pedidos_productos_select_admin" ON pedidos_productos FOR SELECT USING (current_setting('role') = 'admin');
+CREATE POLICY "pedidos_productos_insert" ON pedidos_productos FOR INSERT WITH CHECK (true);
+CREATE POLICY "pedidos_productos_update_admin" ON pedidos_productos FOR UPDATE USING (current_setting('role') = 'admin');
+
+-- ==============================
+-- 9) DATOS DE PRUEBA
+-- ==============================
+
+-- Perfiles
+INSERT INTO perfiles (email, nombre, rol)
+VALUES
+  ('admin@example.com', 'Admin Usuario', 'admin'),
+  ('cliente1@example.com', 'Cliente 1', 'cliente'),
+  ('cliente2@example.com', 'Cliente 2', 'cliente');
+
+-- Productos
+INSERT INTO productos (nombre, descripcion, precio, stock, imagen)
+VALUES
+  ('Laptop Pro', 'Laptop de alto rendimiento para profesionales', 1200.50, 30, 'https://example.com/laptop_pro.jpg'),
+  ('Mouse Gamer', 'Mouse ergonómico con luces RGB', 75.00, 150, 'https://example.com/mouse_gamer.jpg'),
+  ('Teclado Mecánico', 'Teclado mecánico retroiluminado', 150.75, 80, 'https://example.com/teclado_mecanico.jpg'),
+  ('Monitor 4K', 'Monitor de 27 pulgadas con resolución 4K UHD', 450.00, 45, 'https://example.com/monitor_4k.jpg'),
+  ('Webcam HD', 'Webcam con resolución 1080p y micrófono integrado', 90.20, 200, 'https://example.com/webcam_hd.jpg');
+
+-- Pedidos
+INSERT INTO pedidos (usuario_id, estado, monto_total)
+VALUES
+  ((SELECT id FROM perfiles WHERE email = 'cliente1@example.com'), 'entregado', 150.75),
+  ((SELECT id FROM perfiles WHERE email = 'cliente2@example.com'), 'entregado', 1275.50), -- reemplazado 'enviado' -> 'entregado'
+  ((SELECT id FROM perfiles WHERE email = 'cliente1@example.com'), 'pendiente', 90.20),
+  ((SELECT id FROM perfiles WHERE email = 'cliente2@example.com'), 'pendiente', 525.00);
+
+
+-- Envíos
+INSERT INTO envios (pedido_id, direccion_destino, estado_envio)
+VALUES
+  (1, 'Av. Providencia 123, Santiago, Chile', 'entregado'),
+  (2, 'Calle Principal 456, Valparaíso, Chile', 'en tránsito'),
+  (3, 'Pasaje Los Aromos 789, Concepción, Chile', 'pendiente');
+
+-- Transportes
+INSERT INTO transportes (tipo_transporte, numero_licencia, estado)
+VALUES
+  ('Camión', 'ABCD-11', 'activo'),
+  ('Furgón', 'XYZW-22', 'activo'),
+  ('Motocicleta', 'FGHI-33', 'inactivo');
+
+-- Pedidos-productos
+INSERT INTO pedidos_productos (producto_id, usuario_id, cantidad, monto, estado)
+VALUES
+  (1, (SELECT id FROM perfiles WHERE email = 'cliente1@example.com'), 1, 1200.50, 'confirmada'),
+  (2, (SELECT id FROM perfiles WHERE email = 'cliente1@example.com'), 2, 150.00, 'pendiente'),
+  (3, (SELECT id FROM perfiles WHERE email = 'cliente2@example.com'), 1, 150.75, 'confirmada'),
+  (4, (SELECT id FROM perfiles WHERE email = 'cliente2@example.com'), 1, 450.00, 'pendiente');
